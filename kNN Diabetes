@@ -1,0 +1,141 @@
+from ucimlrepo import fetch_ucirepo
+import pandas as pd
+from sklearn.impute import SimpleImputer
+from sklearn.model_selection import train_test_split
+from sklearn.neighbors import KNeighborsClassifier
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+from sklearn.preprocessing import StandardScaler, OneHotEncoder
+from sklearn.compose import ColumnTransformer
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Fetch dataset 
+diabetes_130_us_hospitals_for_years_1999_2008 = fetch_ucirepo(id=296)
+
+# Data (as pandas dataframes)
+X = diabetes_130_us_hospitals_for_years_1999_2008.data.features
+y = diabetes_130_us_hospitals_for_years_1999_2008.data.targets
+
+desired_features = ['gender', 'age', 'admission_type_id', 'discharge_disposition_id', 'admission_source_id', 
+                    'time_in_hospital', 'medical_specialty', 'num_lab_procedures', 'num_procedures', 
+                    'num_medications', 'number_outpatient', 'number_emergency', 'number_inpatient', 
+                    'diag_1', 'diag_2', 'diag_3', 'number_diagnoses', 'max_glu_serum', 'A1Cresult', 
+                    'metformin', 'repaglinide', 'nateglinide', 'chlorpropamide', 'glipizide', 'glyburide', 
+                    'tolazamide', 'insulin', 'change', 'diabetesMed', 'race']
+
+# Filter the dataset to include only the desired features using loc
+X = X.loc[:, desired_features]
+
+y = y.values.ravel()
+""""
+# visualization
+plt.figure(figsize=(8, 6))
+plt.hist(X['num_medications'], bins=20, color='blue', edgecolor='black')
+plt.title('Distribution of Number of Medication for Diabetes Patients')
+plt.xlabel('Number of Medications')
+plt.ylabel('Frequency')
+plt.show()
+"""
+
+# Imputers for string and numeric columns
+num_imputer = SimpleImputer(strategy='mean')
+str_imputer = SimpleImputer(strategy='most_frequent')
+
+# Apply imputers to handle missing values in diabetes dataset
+for column in X.columns:
+    if X[column].dtype == 'object':
+        X.loc[:, column] = str_imputer.fit_transform(X[[column]]).ravel()
+    else:
+        X.loc[:, column] = num_imputer.fit_transform(X[[column]]).ravel()
+
+# seed for reproducing results
+seed = 1234
+
+# Identifying categorical columns
+categorical_cols = [cname for cname in X.columns if X[cname].dtype == 'object']
+
+# Column transformer, one-hot encoding categorical variables
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', StandardScaler(), [cname for cname in X.columns if X[cname].dtype in ['int64', 'float64']]),
+        ('cat', OneHotEncoder(handle_unknown='ignore'), categorical_cols)
+    ])
+
+# Applying the transformations
+X_transformed = preprocessor.fit_transform(X)
+
+# Partition dataset: 20% test, 60% training, 20% validation
+X_train_val, X_test, y_train_val, y_test = train_test_split(X_transformed, y, test_size=0.2, random_state=seed)
+X_train, X_val, y_train, y_val = train_test_split(X_train_val, y_train_val, test_size=0.25, random_state=seed)
+
+# Trying different values of k for kNN
+k_values = range(30, 51)
+val_accuracies_uniform = []
+val_accuracies_distance = []
+
+for k in k_values:
+    for weight in ['uniform', 'distance']:
+        knn = KNeighborsClassifier(n_neighbors=k, weights=weight)
+        knn.fit(X_train, y_train)
+        y_val_pred = knn.predict(X_val)
+        accuracy = accuracy_score(y_val, y_val_pred)
+        if weight == 'uniform':
+            val_accuracies_uniform.append(accuracy)
+        else:
+            val_accuracies_distance.append(accuracy)
+        print(f"k={k}, Weight={weight}, Validation Accuracy: {accuracy:.4f}")
+
+# Plotting the validation accuracies for each k and weight
+plt.figure(figsize=(10, 6))
+plt.plot(k_values, val_accuracies_uniform, marker='o', linestyle='-', color='b', label='Uniform Weight')
+plt.plot(k_values, val_accuracies_distance, marker='o', linestyle='-', color='r', label='Distance Weight')
+plt.xlabel('Number of Neighbors (k)')
+plt.ylabel('Validation Accuracy (Correct Readmission Predictions)')
+plt.title('kNN Validation Accuracy for Different k Values and Weight Options')
+plt.xticks(k_values)
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# Identify the best combination of k and weight based on validation accuracy
+best_k = val_accuracies_uniform.index(max(val_accuracies_uniform)) + 1 if max(val_accuracies_uniform) > max(val_accuracies_distance) else val_accuracies_distance.index(max(val_accuracies_distance)) + 1
+best_weight = 'uniform' if max(val_accuracies_uniform) > max(val_accuracies_distance) else 'distance'
+
+# Re-train the best model on the combined training and validation set
+
+best_knn = KNeighborsClassifier(n_neighbors=best_k, weights=best_weight)
+best_knn.fit(X_train, y_train)
+
+# evaluate model on test set
+y_pred_test = best_knn.predict(X_test)
+
+conf_matrix = confusion_matrix(y_test, y_pred_test)
+
+plt.figure(figsize=(8, 6))
+plt.imshow(conf_matrix, cmap='Blues', interpolation='nearest')
+plt.colorbar()
+plt.title('Confusion Matrix')
+plt.xlabel('Predicted Labels')
+plt.ylabel('True Labels')
+tick_marks = np.arange(len(np.unique(y)))
+plt.xticks(tick_marks, ["<30", ">30", "NO"])
+plt.yticks(tick_marks, ["<30", ">30", "NO"])
+for i in range(conf_matrix.shape[0]):
+    for j in range(conf_matrix.shape[1]):
+        plt.text(j, i, format(conf_matrix[i, j], 'd'),
+                 horizontalalignment="center", color="white" if conf_matrix[i, j] > conf_matrix.max() / 2 else "black")
+plt.tight_layout()
+plt.show()
+
+# Calculate evaluation metrics
+accuracy_test = accuracy_score(y_test, y_pred_test)
+precision_test = precision_score(y_test, y_pred_test, average=None)
+recall_test = recall_score(y_test, y_pred_test, average=None)
+f1_test = f1_score(y_test, y_pred_test, average=None)
+
+# Print the evaluation metrics
+print("Evaluation metrics on the test set:")
+print("Accuracy:", accuracy_test)
+print("Precision:", precision_test)
+print("Recall:", recall_test)
+print("F1 Score:", f1_test)
