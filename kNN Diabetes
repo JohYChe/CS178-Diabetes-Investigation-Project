@@ -16,14 +16,14 @@ diabetes_130_us_hospitals_for_years_1999_2008 = fetch_ucirepo(id=296)
 X = diabetes_130_us_hospitals_for_years_1999_2008.data.features
 y = diabetes_130_us_hospitals_for_years_1999_2008.data.targets
 
-desired_features = ['gender', 'age', 'admission_type_id', 'discharge_disposition_id', 'admission_source_id', 
+desired_features = ['race', 'gender', 'age', 'admission_type_id', 'discharge_disposition_id', 'admission_source_id', 
                     'time_in_hospital', 'medical_specialty', 'num_lab_procedures', 'num_procedures', 
                     'num_medications', 'number_outpatient', 'number_emergency', 'number_inpatient', 
                     'diag_1', 'diag_2', 'diag_3', 'number_diagnoses', 'max_glu_serum', 'A1Cresult', 
                     'metformin', 'repaglinide', 'nateglinide', 'chlorpropamide', 'glipizide', 'glyburide', 
-                    'tolazamide', 'insulin', 'change', 'diabetesMed', 'race']
+                    'tolazamide', 'insulin', 'change', 'diabetesMed']
 
-# Filter the dataset to include only the desired features using loc
+# Filter the dataset
 X = X.loc[:, desired_features]
 
 y = y.values.ravel()
